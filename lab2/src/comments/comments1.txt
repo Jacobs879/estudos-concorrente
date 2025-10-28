@@ -1,0 +1,2 @@
+Q1) Execute algumas vezes a solução serial (para ambas as linguagens) e verifique seu comportamento através dos logs. Houve alguma alteração na ordem de execução das correções entre as diferentes execuções?
+R1) Não houve nenhuma alteração quanto a ordem de execução das correções entre os diferentes casos de execução (Python e C). Observação: Considera-se a execução com os seguintes parâmetros: 2 turmas e 3 alunos (cada).

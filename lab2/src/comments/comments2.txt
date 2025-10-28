@@ -1,0 +1,11 @@
+Q1) Ao implementar esta solução, você chegou a compartilhar algum espaço na memória (variável) entre as diferentes threads filhas e mãe? Se sim, qual?
+R1) Sim. Tanto em Python quanto em C temos o compartilhamento da variável "professor" dentro da função "process_grades".
+
+Q2) Isso pode levar a condições corridas?
+R2) Não, porquê a variável não é modificada, servindo apenas para leitura.
+
+Q3) As múltiplas threads estão atualizando o mesmo espaço na memória?
+R3) Não, estão apenas fazendo o "reading" do mesmo espaço de memória.
+
+Q4) Temos algum problema na solução desenvolvida? Por que sim ou por que não?
+R4) Não, porquê as variáveis acessadas servem somente para leitura, um exemplo disso ocorre em "process_grades" com a variável "professor".
