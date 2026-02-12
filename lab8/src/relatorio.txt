@@ -1,0 +1,42 @@
+## RELATORIO
+
+O objetivo é eliminar condições de corridas e melhorar eficiência do programa.
+
+A solução adotada utilizou primariamente Mutexes visando eliminar as condições de corridas presentes em estruturas compartilhadas do codigo base
+## ALTERAÇÕES NO SERVIDOR (TRACKER)
+
+Problema: Múltiplas goroutines (uma por conexão) acessavam os mapas `hashMap` simultaneamente
+Solução:
+- Adição de `sync` na estrutura `Server`.
+- Uso de `Lock()` para operações de escrita: `store`, `create`,
+  `delete` e desconexão de cliente.
+- Uso de `RLock()` para a operação de leitura: `query`.
+
+Otimização de Desempenho
+- Na função `handleQueryRequest`, implementou-se a cópia dos dados dentro da zona crítica. O `RUnlock()` é chamado imediatamente após a cópia,
+  liberando o servidor para outras requisições enquanto a resposta é enviada
+  pela rede. Isso maximiza o throughput de consultas.
+
+## ALTERAÇÕES NO CLIENTE
+
+O cliente possui três fluxos concorrentes: Interface de Usuário , Servidor de
+Upload (Peer) e Monitoramento de Arquivos em Background
+
+### Proteção do Mapa Local
+- Adição de `sync` na estrutura `Client`.
+- Protege a leitura durante uploads `handleDownloadRequest` e a escrita durante
+  atualizações do monitor de arquivos `monitorDirectory`.
+- Otimização: O lock é liberado *antes* da leitura do arquivo em disco, permitindo que uploads longos não bloqueiem o sistema.
+
+### Proteção da Conexão de Rede
+- Problema: O Monitor de arquivos e a Thread Principal podiam tentar escrever no mesmo socket TCP simultaneamente, corrompendo o protocolo `gob` e causando crash.
+- Solução: Adição de `sync.Mutex` dedicado à conexão com o Tracker.
+- Todas as funções que enviam dados (`queryHash`, `updateServer`, `storeHashes`)
+  agora adquirem este lock antes de instanciar o Encoder.
+
+## CONCLUSÃO
+
+O sistema agora é "Thread-Safe". A escolha por `RWMutex` garante que a operação
+mais frequente (leitura/consulta) seja altamente paralela, atendendo aos requisitos
+de desempenho. A proteção adicional no socket do cliente impede corrupção de dados
+em cenários de alta atividade.
