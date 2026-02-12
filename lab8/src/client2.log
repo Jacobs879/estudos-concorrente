@@ -1,0 +1,9 @@
+Enter server IP: Initial hashes stored.
+
+Choose an option:
+1. Query hash
+2. Download file
+3. Exit
+Enter choice (1, 2 or 3): Server is listening on port 9092...
+2026/02/12 12:25:31 Error reading input:EOF
+exit status 1

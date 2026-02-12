@@ -1,0 +1,23 @@
+Server is listening on port 8080...
+Hash Map:
+Hash: 941
+  IPs:
+    127.0.0.1:54294
+Hash: 0
+  IPs:
+    127.0.0.1:54294
+Hash Map:
+Hash: 941
+  IPs:
+    127.0.0.1:54294
+Hash: 0
+  IPs:
+    127.0.0.1:54294
+Hash: 940
+  IPs:
+    127.0.0.1:54295
+2026/02/12 12:25:31 Client disconnected
+2026/02/12 12:25:31 Cleaned up data for client: 127.0.0.1:54295
+2026/02/12 12:25:31 Error decoding request type: read tcp 127.0.0.1:8080->127.0.0.1:54294: wsarecv: An existing connection was forcibly closed by the remote host.
+2026/02/12 12:25:31 Cleaned up data for client: 127.0.0.1:54294
+exit status 143

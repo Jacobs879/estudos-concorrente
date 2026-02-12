@@ -18,13 +18,13 @@ import (
 
 type Client struct {
 	hashMap map[int]string
-	mu      sync.RWMutex //Mutex para o client
-	connMu  sync.Mutex //Mutex para con
+	mu      sync.RWMutex //Lock
+	connMu  sync.Mutex   // Lock do con
 }
 
-func NewClient() *Client {
+func NewClient(hm map[int]string) *Client {
 	return &Client{
-		hashMap: make(map[int]string),
+		hashMap: hm,
 	}
 }
 
@@ -66,28 +66,33 @@ func listarArquivos(diretorio string) []string {
 	return result
 }
 
-func generateFilesHashMap(diretorio string) map[string][]int {
+func generateFilesHashMap(diretorio string) (map[string][]int, map[int]string) {
 	if _, err := os.Stat(diretorio); os.IsNotExist(err) {
 		log.Fatalf("O diretório %s não existe", diretorio)
 	}
 	files := listarArquivos(diretorio)
 
 	hashs := make(map[string][]int)
+	fps := make(map[int]string)
 	for _, name := range files {
 		fp := filepath.Join(diretorio, name)
 		fileSum, err := sum(fp)
 		if err != nil {
 			fileSum = 0
 		}
+		fps[fileSum] = fp
 		hashs[fp] = append(hashs[fp], fileSum)
 	}
 
-	return hashs
+	return hashs, fps
 }
 
+//Assinatura recebe o client
 func storeHashes(conn net.Conn, hashes map[string][]int, client *Client) {
-	client.connMu.Lock() //Lock
-    defer client.connMu.Unlock()
+	//Lock
+	client.connMu.Lock()
+	defer client.connMu.Unlock()
+
 	encoder := gob.NewEncoder(conn)
 
 	if err := encoder.Encode("store"); err != nil {
@@ -96,16 +101,9 @@ func storeHashes(conn net.Conn, hashes map[string][]int, client *Client) {
 	}
 
 	var hashList []int
-	
-	//Lock escrita
-	client.mu.Lock()
-	for path, vals := range hashes {
-		for _, v := range vals {
-			hashList = append(hashList, v)
-			client.hashMap[v] = path 
-		}
+	for _, v := range hashes {
+		hashList = append(hashList, v...)
 	}
-	client.mu.Unlock()
 
 	if err := encoder.Encode(hashList); err != nil {
 		log.Println("Error encoding hashes:", err)
@@ -116,11 +114,12 @@ func storeHashes(conn net.Conn, hashes map[string][]int, client *Client) {
 }
 
 func updateServer(conn net.Conn, action string, filePath string, client *Client) {
-	client.connMu.Lock()//Lock
-    defer client.connMu.Unlock()
+	//Lock do con
+	client.connMu.Lock()
+	
 	encoder := gob.NewEncoder(conn)
-
 	if err := encoder.Encode(action); err != nil {
+		client.connMu.Unlock()
 		log.Println("Error encoding action:", err)
 		return
 	}
@@ -132,11 +131,14 @@ func updateServer(conn net.Conn, action string, filePath string, client *Client)
 	}
 
 	if err := encoder.Encode(fileHash); err != nil {
+		client.connMu.Unlock()
 		log.Println("Error encoding file hash:", err)
 		return
 	}
+	client.connMu.Unlock()
 
-	// Lock escrita
+	//Lock
+	//corrige o action tambem 
 	client.mu.Lock()
 	if action == "delete" {
 		delete(client.hashMap, fileHash)
@@ -183,11 +185,12 @@ func monitorDirectory(conn net.Conn, directory string, server *Client) {
 	}
 }
 
-//recebe client agora
+//Assinatura agora recebe client
 func queryHash(conn net.Conn, hash int, client *Client) ([]string, error) {
-	//Lock
+	//lock
 	client.connMu.Lock()
-    defer client.connMu.Unlock()
+	defer client.connMu.Unlock()
+
 	encoder := gob.NewEncoder(conn)
 	if err := encoder.Encode("query"); err != nil {
 		log.Println("Error encoding request type:", err)
@@ -216,17 +219,17 @@ func (s *Client) handleDownloadRequest(conn net.Conn, decoder *gob.Decoder) {
 		return
 	}
 
-	//Lock leitura
+	//Lock
 	s.mu.RLock()
 	filePath, exists := s.hashMap[fileHash]
 	s.mu.RUnlock()
 
 	if !exists {
-		log.Println("File hash not found in local map")
+		
+		log.Println("File hash not found locally") 
 		return
 	}
 
-	//Ocorre sem segurar o lock
 	file, err := os.Open("./" + filePath)
 	if err != nil {
 		fmt.Println("./" + filePath)
@@ -277,14 +280,14 @@ func (s *Client) handleConnection(conn net.Conn) {
 	}
 }
 
-func startClientServer(server *Client) {
-	ln, err := net.Listen("tcp", ":9090")
+func startClientServer(clientPort string, server *Client) {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%s", clientPort))
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer ln.Close()
 
-	fmt.Println("Peer Server is listening on port 9090...")
+	fmt.Printf("Server is listening on port %s...\n", clientPort)
 
 	for {
 		conn, err := ln.Accept()
@@ -296,8 +299,8 @@ func startClientServer(server *Client) {
 	}
 }
 
-func donwload(hash int, ip string, outputPath string) error {
-	conn, err := net.Dial("tcp", ip+":9090")
+func donwload(peerPort string, hash int, ip string, outputPath string) error {
+	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", ip, peerPort))
 	if err != nil {
 		fmt.Print("error connecting to peer")
 		return fmt.Errorf("error connecting to server: %v", err)
@@ -328,6 +331,13 @@ func donwload(hash int, ip string, outputPath string) error {
 }
 
 func main() {
+	if len(os.Args) < 3 {
+		panic("usage: go run main.go <client_port> <peer_port> <data_path>")
+	}
+	clientPort := os.Args[1]
+	peerPort := os.Args[2]
+	directory := os.Args[3]
+
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter server IP: ")
 	serverIp, _ := reader.ReadString('\n')
@@ -339,17 +349,14 @@ func main() {
 	}
 	defer conn.Close()
 
-	directory := "./dataset/"
-	_ = os.MkdirAll(directory, 0755)
+	initialHashes, filePaths := generateFilesHashMap(directory)
+
 	
-	initialHashes := generateFilesHashMap(directory)
-	
-	server := NewClient()
-	
+	server := NewClient(filePaths)
 	storeHashes(conn, initialHashes, server)
 
 	go monitorDirectory(conn, directory, server)
-	go startClientServer(server)
+	go startClientServer(clientPort, server)
 
 	for {
 		fmt.Println("\nChoose an option:")
@@ -392,7 +399,8 @@ func main() {
 			fmt.Print("Enter file path to output: ")
 			filePath, _ := reader.ReadString('\n')
 			filePath = strings.TrimSpace(filePath)
-			//agora passa o server tb
+
+			//Agora passa server pra query
 			ips, err := queryHash(conn, hash, server)
 			if err != nil {
 				log.Fatal("Error while searching for IPs for the provided hash", err)
@@ -404,8 +412,7 @@ func main() {
 				continue
 			}
 
-			targetIP := strings.Split(ips[0], ":")[0]
-			donwload(hash, targetIP, filePath)
+			donwload(peerPort, hash, strings.Split(ips[0], ":")[0], filePath)
 
 		case 3:
 			fmt.Println("Exiting...")
